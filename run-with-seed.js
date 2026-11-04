@@ -82,6 +82,32 @@ async function seedKeys() {
         }
       }
 
+      // 4. Seed generic providerConnections from STATIC_PROVIDERS_JSON (supports any provider)
+      if (connTable && process.env.STATIC_PROVIDERS_JSON) {
+        try {
+          const list = JSON.parse(process.env.STATIC_PROVIDERS_JSON);
+          for (const p of (Array.isArray(list) ? list : [list])) {
+            const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = p;
+            db.prepare(`
+              INSERT OR REPLACE INTO providerConnections (id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            `).run(
+              id || `seed-${provider}`,
+              provider,
+              authType || (rest.apiKey ? "apikey" : "oauth"),
+              name || email || provider,
+              email || null,
+              priority || 1,
+              isActive === false ? 0 : 1,
+              JSON.stringify(rest)
+            );
+            console.log(`[KeySeeder] ✅ Seeded provider from JSON: ${provider} (${name || email})`);
+          }
+        } catch (e) {
+          console.error("[KeySeeder] Failed to parse STATIC_PROVIDERS_JSON:", e.message);
+        }
+      }
+
       db.close();
       console.log("[KeySeeder] Verification finished.");
       break;
