@@ -1,0 +1,15 @@
+name: "Keepalive Ping"
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render free instance from spinning down
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping 9Router Health Endpoint
+        run: |
+          curl -f -s https://ninerouter-cloud-eht2.onrender.com/api/health || echo "Ping attempted"
