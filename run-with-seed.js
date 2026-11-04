@@ -18,19 +18,8 @@ child.on("exit", (code, signal) => {
 process.on("SIGINT", () => child.kill("SIGINT"));
 process.on("SIGTERM", () => child.kill("SIGTERM"));
 
-// 2. Static Keys to guarantee persistence across restarts/redeploys
-const KEYS_TO_SEED = [
-  {
-    id: "static-current-default-key",
-    key: process.env.STATIC_API_KEY || "sk-05b55a4936a7fcfa-zawh5i-2a8af7b8",
-    name: "Permanent Default Key",
-  },
-  {
-    id: "static-fitbit-master-key",
-    key: "sk-fitbit-master-key-2026",
-    name: "Fitbit Master Key",
-  },
-];
+// 2. User's chosen secure random API key
+const PRIMARY_KEY = process.env.STATIC_API_KEY || "sk-3e5e623503fec61e-60m0mu-94bd36a8";
 
 async function seedKeys() {
   const dbPath = path.join(process.env.DATA_DIR || "/app/data", "db", "data.sqlite");
@@ -52,21 +41,23 @@ async function seedKeys() {
         continue;
       }
 
-      for (const item of KEYS_TO_SEED) {
-        const existing = db.prepare("SELECT key FROM apiKeys WHERE key = ?").get(item.key);
-        if (!existing) {
-          db.prepare(`
-            INSERT OR REPLACE INTO apiKeys (id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow)
-            VALUES (?, ?, ?, ?, 1, ?, 0, NULL)
-          `).run(item.id, item.key, item.name, "cloud-machine", new Date().toISOString());
-          console.log(`[KeySeeder] ✅ Successfully seeded static key: ${item.key} (${item.name})`);
-        } else {
-          console.log(`[KeySeeder] Key already active: ${item.key}`);
-        }
+      // Remove any predictable / weak legacy keys
+      db.prepare("DELETE FROM apiKeys WHERE key LIKE '%fitbit-master%' OR id = 'static-fitbit-master-key'").run();
+
+      // Ensure primary secure key is active
+      const existing = db.prepare("SELECT key FROM apiKeys WHERE key = ?").get(PRIMARY_KEY);
+      if (!existing) {
+        db.prepare(`
+          INSERT OR REPLACE INTO apiKeys (id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow)
+          VALUES (?, ?, ?, ?, 1, ?, 0, NULL)
+        `).run("static-secure-primary-key", PRIMARY_KEY, "Fitbit Production Key", "3e5e623503fec61e", new Date().toISOString());
+        console.log(`[KeySeeder] ✅ Successfully locked secure API key: ${PRIMARY_KEY}`);
+      } else {
+        console.log(`[KeySeeder] Secure API key active: ${PRIMARY_KEY}`);
       }
 
       db.close();
-      console.log("[KeySeeder] All permanent keys verified and ready.");
+      console.log("[KeySeeder] Key verification finished.");
       break;
     } catch (err) {
       // Continue polling until SQLite is ready
