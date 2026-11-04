@@ -2,7 +2,7 @@ const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-console.log("[Launcher] Starting 9Router with Persistent Key Seeder...");
+console.log("[Launcher] Starting 9Router with Persistent Key & Provider Seeder...");
 
 // 1. Start custom-server.js
 const child = spawn("node", ["custom-server.js", ...process.argv.slice(2)], {
@@ -56,8 +56,34 @@ async function seedKeys() {
         console.log(`[KeySeeder] Secure API key active: ${PRIMARY_KEY}`);
       }
 
+      // 3. Seed providerConnections for Antigravity from environment variable
+      const connTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='providerConnections'").get();
+      const refreshToken = process.env.ANTIGRAVITY_REFRESH_TOKEN;
+      if (connTable && refreshToken) {
+        const existingConn = db.prepare("SELECT id FROM providerConnections WHERE provider = 'antigravity'").get();
+        if (!existingConn) {
+          const email = process.env.ANTIGRAVITY_EMAIL || "mos.naksuk@gmail.com";
+          const connDataObj = {
+            accessToken: process.env.ANTIGRAVITY_ACCESS_TOKEN || "",
+            refreshToken: refreshToken,
+            scope: "https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/experimentsandconfigs https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
+            projectId: "aicode-consumers",
+            testStatus: "active",
+            expiresIn: 3599,
+            expiresAt: new Date(Date.now() + 3600000).toISOString()
+          };
+          db.prepare(`
+            INSERT OR REPLACE INTO providerConnections (id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
+            VALUES (?, 'antigravity', 'oauth', ?, ?, 1, 1, ?, datetime('now'), datetime('now'))
+          `).run("4a289910-1059-4f64-b448-95593bba4da4", email, email, JSON.stringify(connDataObj));
+          console.log("[KeySeeder] ✅ Successfully locked Antigravity OAuth connection from environment!");
+        } else {
+          console.log("[KeySeeder] Antigravity OAuth connection active.");
+        }
+      }
+
       db.close();
-      console.log("[KeySeeder] Key verification finished.");
+      console.log("[KeySeeder] Verification finished.");
       break;
     } catch (err) {
       // Continue polling until SQLite is ready
